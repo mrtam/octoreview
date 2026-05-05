@@ -1,0 +1,17 @@
+{
+  "name": "gitmarks",
+  "version": "0.1.0",
+  "description": "A Chrome extension for saved GitHub pull request filters.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc && node scripts/copy-static.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "clean": "node scripts/clean.mjs"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^21.1.7",
+    "jsdom": "^24.1.3",
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,141 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { JSDOM } from "jsdom";
+import { draftToFilter, renderFilterList, updateSearchSyntaxState, validateFilterDraft } from "../dist/options.js";
+
+test("validateFilterDraft requires query unless default open PRs is selected", () => {
+  const baseDraft = {
+    id: "",
+    name: "Mine",
+    repoOwner: "octo-org",
+    repoName: "octo-repo",
+    query: "",
+    icon: "",
+    useDefaultOpen: false,
+    enabled: true,
+    includeDrafts: true,
+    sort: "updated-desc"
+  };
+
+  assert.deepEqual(validateFilterDraft(baseDraft), [
+    "Search syntax is required unless default open PRs is selected."
+  ]);
+  assert.deepEqual(validateFilterDraft({ ...baseDraft, useDefaultOpen: true }), []);
+});
+
+test("draftToFilter stores blank query for explicit default-open filters", () => {
+  const filter = draftToFilter({
+    id: "f1",
+    name: " Mine ",
+    repoOwner: " octo-org ",
+    repoName: " octo-repo ",
+    query: " ignored ",
+    icon: " API ",
+    useDefaultOpen: true,
+    enabled: true,
+    includeDrafts: true,
+    sort: "updated-desc"
+  });
+
+  assert.equal(filter.name, "Mine");
+  assert.equal(filter.repoOwner, "octo-org");
+  assert.equal(filter.repoName, "octo-repo");
+  assert.equal(filter.query, "");
+  assert.equal(filter.icon, "API");
+});
+
+test("draftToFilter limits custom filter icons", () => {
+  const filter = draftToFilter({
+    id: "f1",
+    name: "Mine",
+    repoOwner: "octo-org",
+    repoName: "octo-repo",
+    query: "review-requested:@me",
+    icon: "ABCDE",
+    useDefaultOpen: false,
+    enabled: true,
+    includeDrafts: true,
+    sort: "updated-desc"
+  });
+
+  assert.equal(filter.icon, "ABCD");
+});
+
+test("draftToFilter preserves the includeDrafts toggle", () => {
+  const filter = draftToFilter({
+    id: "f1",
+    name: "Ready only",
+    repoOwner: "octo-org",
+    repoName: "octo-repo",
+    query: "review-requested:@me",
+    icon: "",
+    useDefaultOpen: false,
+    enabled: true,
+    includeDrafts: false,
+    sort: "updated-desc"
+  });
+
+  assert.equal(filter.includeDrafts, false);
+});
+
+test("updateSearchSyntaxState disables query input while default open PRs is selected", () => {
+  const dom = new JSDOM(`
+    <label class="field">
+      <input id="query" type="text" value="review-requested:@me">
+      <span id="note" hidden>Ignored.</span>
+    </label>
+    <input id="default-open" type="checkbox" checked>
+  `);
+  globalThis.document = dom.window.document;
+  const queryInput = dom.window.document.getElementById("query");
+  const defaultOpenInput = dom.window.document.getElementById("default-open");
+  const note = dom.window.document.getElementById("note");
+
+  updateSearchSyntaxState(queryInput, defaultOpenInput, note);
+
+  assert.equal(queryInput.disabled, true);
+  assert.equal(queryInput.value, "review-requested:@me");
+  assert.equal(queryInput.placeholder, "Default open PRs selected");
+  assert.equal(queryInput.closest(".field").classList.contains("field-disabled"), true);
+  assert.equal(note.hidden, false);
+
+  defaultOpenInput.checked = false;
+  updateSearchSyntaxState(queryInput, defaultOpenInput, note);
+
+  assert.equal(queryInput.disabled, false);
+  assert.equal(queryInput.placeholder, "review-requested:@me -draft:true");
+  assert.equal(queryInput.closest(".field").classList.contains("field-disabled"), false);
+  assert.equal(note.hidden, true);
+});
+
+test("renderFilterList renders actions for saved filters", () => {
+  const dom = new JSDOM("<main id=\"root\"></main>");
+  globalThis.document = dom.window.document;
+  const root = dom.window.document.getElementById("root");
+
+  renderFilterList(root, [
+    {
+      id: "f1",
+      name: "Needs review",
+      repoOwner: "octo-org",
+      repoName: "octo-repo",
+      query: "review-requested:@me",
+      icon: "ME",
+      enabled: true,
+      sort: "updated-desc"
+    }
+  ]);
+
+  assert.match(root.textContent, /Needs review/);
+  assert.equal(root.querySelector(".filter-list-icon").textContent, "ME");
+  assert.equal(root.querySelectorAll("button[data-action]").length, 3);
+  assert.ok(root.querySelector(".drag-handle"), "expected a drag handle");
+  assert.match(
+    root.querySelector("button[data-action='open']").getAttribute("aria-label"),
+    /Open/
+  );
+  assert.match(
+    root.querySelector("button[data-action='delete']").getAttribute("aria-label"),
+    /Delete/
+  );
+});

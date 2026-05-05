@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Gitmarks Options</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body data-page="options">
+    <main class="page">
+      <header class="page-header">
+        <h1>Gitmarks</h1>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+      </header>
+
+      <section class="settings-section" aria-labelledby="token-heading">
+        <div class="section-header">
+          <h2 id="token-heading">GitHub Token</h2>
+        </div>
+        <form id="token-form" class="token-form">
+          <label class="field">
+            <span>Token</span>
+            <input id="token-input" type="password" autocomplete="off" spellcheck="false">
+          </label>
+          <div class="actions">
+            <button type="submit">Save token</button>
+            <button id="validate-token-button" type="button">Validate</button>
+            <button id="clear-token-button" type="button" class="secondary">Clear</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="settings-section" aria-labelledby="filter-heading">
+        <div class="section-header">
+          <h2 id="filter-heading">Filters</h2>
+          <button id="new-filter-button" type="button" class="primary-with-icon">
+            <span class="button-icon" aria-hidden="true" data-icon="add"></span>
+            <span>New filter</span>
+          </button>
+        </div>
+        <div id="filter-list" class="filter-list"></div>
+      </section>
+    </main>
+
+    <dialog id="filter-editor-dialog" class="editor-dialog" aria-labelledby="editor-heading">
+      <div class="editor-dialog-header">
+        <h2 id="editor-heading">Filter</h2>
+        <button id="filter-editor-close" type="button" class="icon-button" aria-label="Close">
+          <span class="button-icon" aria-hidden="true" data-icon="close"></span>
+        </button>
+      </div>
+      <form id="filter-form" class="filter-form">
+        <input id="filter-id" type="hidden">
+        <div class="field-grid editor-name-row">
+          <label class="field editor-name-field">
+            <span>Name</span>
+            <input id="filter-name" type="text" required>
+          </label>
+          <div class="field editor-icon-field">
+            <span>Icon</span>
+            <input id="filter-icon" type="hidden">
+            <div class="icon-trigger-row">
+              <button id="filter-icon-trigger" type="button" class="icon-trigger" aria-haspopup="dialog" aria-controls="icon-picker-dialog">
+                <span id="filter-icon-trigger-preview" class="icon-trigger-preview" aria-hidden="true"></span>
+                <span id="filter-icon-trigger-label" class="icon-trigger-label">Choose icon</span>
+              </button>
+              <button id="filter-icon-clear" type="button" class="icon-button" aria-label="Clear icon" hidden>
+                <span class="button-icon" aria-hidden="true" data-icon="close"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="field-grid">
+          <label class="field">
+            <span>Owner</span>
+            <input id="filter-owner" type="text" required spellcheck="false">
+          </label>
+          <label class="field">
+            <span>Repository</span>
+            <input id="filter-repo" type="text" required spellcheck="false">
+          </label>
+          <label class="field">
+            <span>Sort</span>
+            <select id="filter-sort">
+              <option value="updated-desc">Updated newest</option>
+              <option value="created-desc">Created newest</option>
+              <option value="created-asc">Created oldest</option>
+              <option value="comments-desc">Most commented</option>
+            </select>
+          </label>
+        </div>
+        <label class="field">
+          <span>Search syntax</span>
+          <input id="filter-query" type="text" spellcheck="false" placeholder="review-requested:@me -draft:true">
+          <span id="filter-query-note" class="field-note" hidden>Ignored while Default open PRs is selected.</span>
+        </label>
+        <div class="checkbox-row">
+          <label>
+            <input id="filter-default-open" type="checkbox">
+            Default open PRs
+          </label>
+          <label>
+            <input id="filter-include-drafts" type="checkbox" checked>
+            Include draft PRs
+          </label>
+          <label>
+            <input id="filter-enabled" type="checkbox" checked>
+            Enabled
+          </label>
+        </div>
+        <div id="filter-errors" class="errors" role="alert"></div>
+        <div class="actions editor-actions">
+          <button id="cancel-edit-button" type="button" class="secondary">Cancel</button>
+          <button type="submit">Save filter</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="icon-picker-dialog" class="icon-picker-dialog" aria-labelledby="icon-picker-title">
+      <form method="dialog" class="icon-picker-form">
+        <header class="icon-picker-header">
+          <h2 id="icon-picker-title">Choose an icon</h2>
+          <button type="submit" value="cancel" class="icon-button icon-picker-close" aria-label="Close">
+            <span class="button-icon" aria-hidden="true" data-icon="close"></span>
+          </button>
+        </header>
+        <div class="icon-picker-controls">
+          <input id="icon-picker-search" type="search" placeholder="Search icons (e.g. bug, security, release)" autocomplete="off" spellcheck="false">
+          <button id="icon-picker-none" type="button" class="secondary">No icon</button>
+        </div>
+        <div id="icon-picker-grid" class="icon-picker-grid" role="radiogroup" aria-labelledby="icon-picker-title"></div>
+        <p id="icon-picker-empty" class="icon-picker-empty" hidden>No matching icons.</p>
+      </form>
+    </dialog>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

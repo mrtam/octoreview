@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Gitmarks</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body data-page="popup">
+    <header class="topbar">
+      <h1>Gitmarks</h1>
+      <div class="toolbar">
+        <button id="refresh-button" class="icon-button" type="button" title="Refresh filters" aria-label="Refresh filters">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M13.5 2.5v3.5H10"/>
+            <path d="M2.5 13.5v-3.5H6"/>
+            <path d="M13 6a5.5 5.5 0 0 0-9.6-1.7L2.5 6"/>
+            <path d="M3 10a5.5 5.5 0 0 0 9.6 1.7l.9-1.7"/>
+          </svg>
+        </button>
+        <button id="options-button" class="icon-button" type="button" title="Open options" aria-label="Open options">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="8" cy="8" r="2"/>
+            <path d="M8 1.5v1.8M8 12.7v1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M1.5 8h1.8M12.7 8h1.8M3.4 12.6l1.3-1.3M11.3 4.7l1.3-1.3"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+    <main id="popup-root" class="popup-root" aria-live="polite"></main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
