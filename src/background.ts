@@ -17,7 +17,7 @@ import type {
   SavedFilter
 } from "./types.js";
 
-export const POLLING_ALARM_NAME = "gitmarks-poll";
+export const POLLING_ALARM_NAME = "octoreview-poll";
 export const DEFAULT_ICON_PATHS = {
   16: "icons/icon-16.png",
   32: "icons/icon-32.png",
