@@ -1,8 +1,22 @@
-import type { CacheByFilterId, FilterCacheEntry, SavedFilter } from "./types.js";
+import type {
+  AppSettings,
+  CacheByFilterId,
+  FilterCacheEntry,
+  NotificationStateByFilterId,
+  PollingIntervalMinutes,
+  SavedFilter
+} from "./types.js";
 
 const TOKEN_KEY = "githubToken";
 const FILTERS_KEY = "filters";
 const CACHE_KEY = "cacheByFilterId";
+const SETTINGS_KEY = "appSettings";
+const NOTIFICATION_STATE_KEY = "notificationStateByFilterId";
+
+export const POLLING_INTERVAL_OPTIONS: PollingIntervalMinutes[] = [1, 5, 15, 30, 60];
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  pollingIntervalMinutes: 15
+};
 
 export async function getGitHubToken(): Promise<string> {
   return getStorageValue(TOKEN_KEY, "");
@@ -40,6 +54,27 @@ export async function saveFilterCacheEntry(filterId: string, entry: FilterCacheE
   return nextCache;
 }
 
+export async function getAppSettings(): Promise<AppSettings> {
+  const settings = await getStorageValue<Partial<AppSettings>>(SETTINGS_KEY, DEFAULT_APP_SETTINGS);
+  return normalizeAppSettings(settings);
+}
+
+export async function saveAppSettings(settings: AppSettings): Promise<void> {
+  await chrome.storage.local.set({ [SETTINGS_KEY]: normalizeAppSettings(settings) });
+}
+
+export async function getNotificationStateByFilterId(): Promise<NotificationStateByFilterId> {
+  return getStorageValue<NotificationStateByFilterId>(NOTIFICATION_STATE_KEY, {});
+}
+
+export async function saveNotificationStateByFilterId(state: NotificationStateByFilterId): Promise<void> {
+  await chrome.storage.local.set({ [NOTIFICATION_STATE_KEY]: state });
+}
+
+export async function clearNotificationStateByFilterId(): Promise<void> {
+  await chrome.storage.local.remove(NOTIFICATION_STATE_KEY);
+}
+
 export function normalizeStoredFilter(filter: SavedFilter): SavedFilter {
   return {
     id: filter.id,
@@ -49,9 +84,22 @@ export function normalizeStoredFilter(filter: SavedFilter): SavedFilter {
     query: filter.query.trim(),
     icon: normalizeIcon(filter.icon),
     enabled: filter.enabled,
+    pollingEnabled: filter.pollingEnabled === true,
     sort: filter.sort || "updated-desc",
     includeDrafts: filter.includeDrafts !== false
   };
+}
+
+export function normalizeAppSettings(settings: Partial<AppSettings> | undefined): AppSettings {
+  const interval = settings?.pollingIntervalMinutes;
+
+  return {
+    pollingIntervalMinutes: isPollingIntervalMinutes(interval) ? interval : DEFAULT_APP_SETTINGS.pollingIntervalMinutes
+  };
+}
+
+export function isPollingIntervalMinutes(value: unknown): value is PollingIntervalMinutes {
+  return typeof value === "number" && POLLING_INTERVAL_OPTIONS.includes(value as PollingIntervalMinutes);
 }
 
 async function getStorageValue<T>(key: string, fallback: T): Promise<T> {

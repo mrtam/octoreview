@@ -3,14 +3,17 @@ import {
   getCacheByFilterId,
   getFilters,
   getGitHubToken,
+  getNotificationStateByFilterId,
+  saveNotificationStateByFilterId,
   saveFilterCacheEntry
 } from "./storage.js";
 import { formatRelativeTime } from "./time.js";
-import type { CacheByFilterId, FilterCacheEntry, SavedFilter } from "./types.js";
+import type { CacheByFilterId, FilterCacheEntry, NotificationStateByFilterId, SavedFilter } from "./types.js";
 
 interface PopupRenderState {
   tokenConfigured: boolean;
   loadingFilterIds: Set<string>;
+  unreadFilterIds?: Set<string>;
   pagingFilterIds?: Set<string>;
   activeFilterId?: string | null;
   expandedFilterIds?: Set<string>;
@@ -19,6 +22,7 @@ interface PopupRenderState {
 interface PopupState {
   filters: SavedFilter[];
   cacheByFilterId: CacheByFilterId;
+  notificationStateByFilterId: NotificationStateByFilterId;
   token: string;
   loadingFilterIds: Set<string>;
   pagingFilterIds: Set<string>;
@@ -29,6 +33,7 @@ interface PopupState {
 const state: PopupState = {
   filters: [],
   cacheByFilterId: {},
+  notificationStateByFilterId: {},
   token: "",
   loadingFilterIds: new Set(),
   pagingFilterIds: new Set(),
@@ -61,15 +66,37 @@ export function renderPopup(
   root.append(createMenuShell(enabledFilters, cacheByFilterId, renderState));
 }
 
+export function clearFilterUnreadNotification(
+  notificationState: NotificationStateByFilterId,
+  filterId: string
+): NotificationStateByFilterId {
+  const entry = notificationState[filterId];
+
+  if (!entry || entry.unreadPrIds.length === 0) {
+    return notificationState;
+  }
+
+  const nextEntry = { ...entry, unreadPrIds: [] };
+  delete nextEntry.lastNewPrIds;
+
+  return {
+    ...notificationState,
+    [filterId]: nextEntry
+  };
+}
+
 async function bootstrapPopup(): Promise<void> {
   const root = getElement("popup-root");
   const refreshButton = getElement("refresh-button") as HTMLButtonElement;
   const optionsButton = getElement("options-button") as HTMLButtonElement;
 
-  [state.token, state.filters, state.cacheByFilterId] = await Promise.all([
+  await dismissToolbarBadge();
+
+  [state.token, state.filters, state.cacheByFilterId, state.notificationStateByFilterId] = await Promise.all([
     getGitHubToken(),
     getFilters(),
-    getCacheByFilterId()
+    getCacheByFilterId(),
+    getNotificationStateByFilterId()
   ]);
 
   state.activeFilterId = state.filters.find((filter) => filter.enabled)?.id || null;
@@ -120,7 +147,9 @@ async function bootstrapPopup(): Promise<void> {
     const button = target?.closest<HTMLButtonElement>("button[data-action='select-filter']");
 
     if (button) {
-      selectFilter(button.dataset.filterId || "", root);
+      const filterId = button.dataset.filterId || "";
+      selectFilter(filterId, root);
+      void acknowledgeFilterNotification(filterId, root);
     }
   });
 
@@ -129,13 +158,40 @@ async function bootstrapPopup(): Promise<void> {
     const button = target?.closest<HTMLButtonElement>("button[data-action='select-filter']");
 
     if (button) {
-      selectFilter(button.dataset.filterId || "", root);
+      const filterId = button.dataset.filterId || "";
+      selectFilter(filterId, root);
+      void acknowledgeFilterNotification(filterId, root);
     }
+  });
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local" || !changes.notificationStateByFilterId) {
+      return;
+    }
+
+    state.notificationStateByFilterId = (changes.notificationStateByFilterId.newValue as NotificationStateByFilterId | undefined) || {};
+    render(root);
   });
 
   if (state.token) {
     void refreshEnabledFilters(root);
   }
+}
+
+async function dismissToolbarBadge(): Promise<void> {
+  await chrome.action.setBadgeText({ text: "" });
+}
+
+async function acknowledgeFilterNotification(filterId: string, root: HTMLElement): Promise<void> {
+  const entry = state.notificationStateByFilterId[filterId];
+
+  if (!entry || entry.unreadPrIds.length === 0) {
+    return;
+  }
+
+  state.notificationStateByFilterId = clearFilterUnreadNotification(state.notificationStateByFilterId, filterId);
+  await saveNotificationStateByFilterId(state.notificationStateByFilterId);
+  render(root);
 }
 
 async function refreshEnabledFilters(root: HTMLElement): Promise<void> {
@@ -255,6 +311,7 @@ function render(root: HTMLElement): void {
   renderPopup(root, state.filters, state.cacheByFilterId, {
     tokenConfigured: Boolean(state.token),
     loadingFilterIds: state.loadingFilterIds,
+    unreadFilterIds: getUnreadFilterIds(state.notificationStateByFilterId),
     pagingFilterIds: state.pagingFilterIds,
     activeFilterId: state.activeFilterId
   });
@@ -326,7 +383,8 @@ function createMenuShell(
   for (const filter of filters) {
     menu.append(createFilterMenuItem(filter, cacheByFilterId[filter.id], {
       active: filter.id === activeFilter.id,
-      loading: renderState.loadingFilterIds.has(filter.id)
+      loading: renderState.loadingFilterIds.has(filter.id),
+      unread: (renderState.unreadFilterIds ?? new Set()).has(filter.id)
     }));
   }
 
@@ -341,13 +399,14 @@ function createMenuShell(
 function createFilterMenuItem(
   filter: SavedFilter,
   cacheEntry: CacheByFilterId[string] | undefined,
-  options: { active: boolean; loading: boolean }
+  options: { active: boolean; loading: boolean; unread: boolean }
 ): HTMLElement {
   const item = document.createElement("button");
   item.className = "filter-menu-item";
   item.type = "button";
   item.dataset.action = "select-filter";
   item.dataset.filterId = filter.id;
+  item.dataset.unread = String(options.unread);
   item.setAttribute("aria-selected", String(options.active));
 
   const icon = document.createElement("span");
@@ -393,12 +452,25 @@ function createFilterMenuItem(
     count.textContent = formatTotalCount(total);
   }
 
+  const badges = document.createElement("span");
+  badges.className = "filter-badges";
+
+  if (options.unread) {
+    const unreadDot = document.createElement("span");
+    unreadDot.className = "filter-unread-dot";
+    unreadDot.title = "New PRs found by polling";
+    unreadDot.setAttribute("aria-label", "New PRs found by polling");
+    badges.append(unreadDot);
+  }
+
+  badges.append(count);
+
   const chevron = document.createElement("span");
   chevron.className = "chevron";
   chevron.textContent = "›";
   chevron.setAttribute("aria-hidden", "true");
 
-  item.append(icon, content, count, chevron);
+  item.append(icon, content, badges, chevron);
   return item;
 }
 
@@ -527,6 +599,14 @@ function createPullRequestRow(result: CacheByFilterId[string]["results"][number]
 
 function formatTotalCount(total: number): string {
   return total >= 1000 ? "1000+" : String(total);
+}
+
+function getUnreadFilterIds(notificationState: NotificationStateByFilterId): Set<string> {
+  return new Set(
+    Object.entries(notificationState)
+      .filter(([, entry]) => entry.unreadPrIds.length > 0)
+      .map(([filterId]) => filterId)
+  );
 }
 
 function isEmojiIcon(value: string): boolean {

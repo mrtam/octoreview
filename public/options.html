@@ -30,6 +30,18 @@
         </form>
       </section>
 
+      <section class="settings-section" aria-labelledby="polling-heading">
+        <div class="section-header">
+          <h2 id="polling-heading">Polling</h2>
+        </div>
+        <form id="polling-form" class="polling-form">
+          <label class="field polling-interval-field">
+            <span>Interval</span>
+            <select id="polling-interval"></select>
+          </label>
+        </form>
+      </section>
+
       <section class="settings-section" aria-labelledby="filter-heading">
         <div class="section-header">
           <h2 id="filter-heading">Filters</h2>
@@ -106,6 +118,10 @@
           <label>
             <input id="filter-enabled" type="checkbox" checked>
             Enabled
+          </label>
+          <label>
+            <input id="filter-polling-enabled" type="checkbox">
+            Poll for new PRs
           </label>
         </div>
         <div id="filter-errors" class="errors" role="alert"></div>

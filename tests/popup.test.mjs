@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
-import { renderPopup } from "../dist/popup.js";
+import { clearFilterUnreadNotification, renderPopup } from "../dist/popup.js";
 
 const filter = {
   id: "f1",
@@ -216,6 +216,46 @@ test("renderPopup uses custom filter icons in the menu", () => {
   assert.equal(icon.textContent, "ME");
   assert.equal(icon.classList.contains("filter-icon-custom"), true);
   assert.equal(icon.classList.contains("filter-icon-emoji"), false);
+});
+
+test("renderPopup marks filters with unread polling notifications", () => {
+  const dom = new JSDOM("<main id=\"root\"></main>");
+  globalThis.document = dom.window.document;
+  const root = dom.window.document.getElementById("root");
+
+  renderPopup(root, [filter], {}, {
+    tokenConfigured: true,
+    loadingFilterIds: new Set(),
+    unreadFilterIds: new Set([filter.id]),
+    activeFilterId: filter.id
+  });
+
+  const item = root.querySelector(".filter-menu-item");
+  const dot = root.querySelector(".filter-unread-dot");
+  assert.equal(item.dataset.unread, "true");
+  assert.equal(dot !== null, true);
+  assert.equal(dot.getAttribute("aria-label"), "New PRs found by polling");
+});
+
+test("clearFilterUnreadNotification clears only the hovered filter", () => {
+  const state = {
+    f1: {
+      unreadPrIds: [1, 2],
+      lastPolledAt: "2026-05-06T10:00:00Z",
+      lastNewPrIds: [1, 2]
+    },
+    f2: {
+      unreadPrIds: [3],
+      lastPolledAt: "2026-05-06T10:00:00Z",
+      lastNewPrIds: [3]
+    }
+  };
+
+  const next = clearFilterUnreadNotification(state, "f1");
+
+  assert.deepEqual(next.f1.unreadPrIds, []);
+  assert.equal("lastNewPrIds" in next.f1, false);
+  assert.deepEqual(next.f2.unreadPrIds, [3]);
 });
 
 test("renderPopup styles emoji icons differently from text initials", () => {
