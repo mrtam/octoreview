@@ -170,6 +170,7 @@ export function renderFilterList(
 function createFilterItem(filter: SavedFilter): HTMLElement {
   const item = document.createElement("article");
   item.className = "filter-item";
+  item.dataset.dragType = "filter";
   item.dataset.filterId = filter.id;
   item.dataset.disabled = String(!filter.enabled);
   item.dataset.polling = String(filter.pollingEnabled);
@@ -180,6 +181,7 @@ function createFilterItem(filter: SavedFilter): HTMLElement {
   const handle = document.createElement("button");
   handle.type = "button";
   handle.className = "drag-handle";
+  handle.dataset.dragType = "filter";
   handle.dataset.filterId = filter.id;
   handle.setAttribute("aria-label", `Reorder ${filter.name}`);
   handle.title = "Drag to reorder";
@@ -220,57 +222,39 @@ function createFilterItem(filter: SavedFilter): HTMLElement {
 function createFilterListCategoryHeader(category: Category, count: number): HTMLElement {
   const header = document.createElement("div");
   header.className = "filter-list-category-header";
+  header.dataset.dragType = "category";
   header.dataset.categoryId = category.id;
 
-  const name = document.createElement("span");
-  name.className = "filter-list-category-name";
-  name.textContent = category.name || "Untitled";
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "drag-handle";
+  handle.dataset.dragType = "category";
+  handle.dataset.categoryId = category.id;
+  handle.setAttribute("aria-label", `Reorder category ${category.name || "Untitled"}`);
+  handle.title = "Drag to reorder";
+  handle.innerHTML = UI_ICONS.grip;
+
+  const name = document.createElement("input");
+  name.type = "text";
+  name.className = "category-name-input";
+  name.value = category.name;
+  name.dataset.categoryId = category.id;
+  name.setAttribute("aria-label", `Rename ${category.name || "category"}`);
 
   const countNode = document.createElement("span");
   countNode.className = "filter-list-category-count";
   countNode.textContent = count === 1 ? "1 filter" : `${count} filters`;
 
-  header.append(name, countNode);
+  const deleteButton = createCategoryActionButton(
+    "category-delete",
+    category.id,
+    UI_ICONS.delete,
+    `Delete ${category.name || "category"}`,
+    true
+  );
+
+  header.append(handle, name, countNode, deleteButton);
   return header;
-}
-
-export function renderCategoryList(root: HTMLElement, categories: Category[]): void {
-  root.replaceChildren();
-
-  if (categories.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "category-item category-item-empty";
-    empty.textContent = "No categories yet. Filters without a category appear ungrouped at the top.";
-    root.append(empty);
-    return;
-  }
-
-  categories.forEach((category, index) => {
-    const item = document.createElement("article");
-    item.className = "category-item";
-    item.dataset.categoryId = category.id;
-
-    const name = document.createElement("input");
-    name.type = "text";
-    name.className = "category-name-input";
-    name.value = category.name;
-    name.dataset.categoryId = category.id;
-    name.setAttribute("aria-label", `Rename ${category.name || "category"}`);
-
-    const actions = document.createElement("div");
-    actions.className = "item-actions";
-
-    const upButton = createCategoryActionButton("category-move-up", category.id, UI_ICONS.arrowUp, "Move up");
-    upButton.disabled = index === 0;
-    const downButton = createCategoryActionButton("category-move-down", category.id, UI_ICONS.arrowDown, "Move down");
-    downButton.disabled = index === categories.length - 1;
-    const deleteButton = createCategoryActionButton("category-delete", category.id, UI_ICONS.delete, `Delete ${category.name || "category"}`, true);
-
-    actions.append(upButton, downButton, deleteButton);
-
-    item.append(name, actions);
-    root.append(item);
-  });
 }
 
 function createCategoryActionButton(
@@ -327,30 +311,6 @@ async function bootstrapOptions(): Promise<void> {
     void createNewCategory();
   });
 
-  getElement("category-list").addEventListener("click", (event) => {
-    const target = event.target as HTMLElement | null;
-    const button = target?.closest<HTMLButtonElement>("button[data-action]");
-    if (!button) {
-      return;
-    }
-    void handleCategoryAction(button.dataset.action || "", button.dataset.categoryId || "");
-  });
-
-  getElement("category-list").addEventListener("change", (event) => {
-    const target = event.target as HTMLElement | null;
-    if (target instanceof HTMLInputElement && target.classList.contains("category-name-input")) {
-      void renameCategoryFromInput(target);
-    }
-  });
-
-  getElement("category-list").addEventListener("keydown", (event) => {
-    const target = event.target as HTMLElement | null;
-    if (event.key === "Enter" && target instanceof HTMLInputElement && target.classList.contains("category-name-input")) {
-      event.preventDefault();
-      target.blur();
-    }
-  });
-
   getElement("filter-form").addEventListener("submit", (event) => {
     event.preventDefault();
     void saveFilterFromForm();
@@ -379,7 +339,7 @@ async function bootstrapOptions(): Promise<void> {
 
   getElement("filter-list").addEventListener("click", (event) => {
     const target = event.target as HTMLElement | null;
-    const button = target?.closest("button");
+    const button = target?.closest<HTMLButtonElement>("button");
 
     if (!button) {
       return;
@@ -389,7 +349,29 @@ async function bootstrapOptions(): Promise<void> {
       return;
     }
 
-    void handleFilterAction(button.dataset.action || "", button.dataset.filterId || "");
+    const action = button.dataset.action || "";
+    const categoryId = button.dataset.categoryId || "";
+    if (action === "category-delete" && categoryId) {
+      void handleCategoryAction(action, categoryId);
+      return;
+    }
+
+    void handleFilterAction(action, button.dataset.filterId || "");
+  });
+
+  getElement("filter-list").addEventListener("change", (event) => {
+    const target = event.target as HTMLElement | null;
+    if (target instanceof HTMLInputElement && target.classList.contains("category-name-input")) {
+      void renameCategoryFromInput(target);
+    }
+  });
+
+  getElement("filter-list").addEventListener("keydown", (event) => {
+    const target = event.target as HTMLElement | null;
+    if (event.key === "Enter" && target instanceof HTMLInputElement && target.classList.contains("category-name-input")) {
+      event.preventDefault();
+      target.blur();
+    }
   });
 
   renderAll();
@@ -712,7 +694,6 @@ function renderIconTrigger(value: string): void {
 
 function renderAll(): void {
   populateCategorySelect();
-  renderCategoryList(getElement("category-list"), state.categories);
   renderFilterList(getElement("filter-list"), state.filters, state.categories);
 }
 
@@ -840,13 +821,15 @@ function closeEditorDialog(): void {
   }
 }
 
+const DRAG_ITEM_SELECTOR = ".filter-item, .filter-list-category-header";
+
 function setupFilterListDragDrop(): void {
   const list = getElement("filter-list");
 
   list.addEventListener("mousedown", (event) => {
     const target = event.target as HTMLElement | null;
     const handle = target?.closest<HTMLButtonElement>(".drag-handle");
-    const item = handle?.closest<HTMLElement>(".filter-item");
+    const item = handle?.closest<HTMLElement>(DRAG_ITEM_SELECTOR);
 
     if (handle && item) {
       item.draggable = true;
@@ -855,7 +838,7 @@ function setupFilterListDragDrop(): void {
 
   list.addEventListener("mouseup", () => clearDraggableFlags(list));
   list.addEventListener("dragend", (event) => {
-    const item = (event.target as HTMLElement | null)?.closest<HTMLElement>(".filter-item");
+    const item = (event.target as HTMLElement | null)?.closest<HTMLElement>(DRAG_ITEM_SELECTOR);
     item?.classList.remove("is-dragging");
     clearDropMarkers(list);
     clearDraggableFlags(list);
@@ -863,23 +846,39 @@ function setupFilterListDragDrop(): void {
 
   list.addEventListener("dragstart", (event) => {
     const target = event.target as HTMLElement | null;
-    const item = target?.closest<HTMLElement>(".filter-item");
+    const item = target?.closest<HTMLElement>(DRAG_ITEM_SELECTOR);
 
     if (!item || !item.draggable || !event.dataTransfer) {
       event.preventDefault();
       return;
     }
 
+    const sourceType = item.dataset.dragType || "";
+    const sourceId = sourceType === "category" ? item.dataset.categoryId || "" : item.dataset.filterId || "";
+
+    if (!sourceType || !sourceId) {
+      event.preventDefault();
+      return;
+    }
+
     event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", item.dataset.filterId || "");
+    event.dataTransfer.setData("text/plain", `${sourceType}:${sourceId}`);
     item.classList.add("is-dragging");
   });
 
   list.addEventListener("dragover", (event) => {
     const target = event.target as HTMLElement | null;
-    const item = target?.closest<HTMLElement>(".filter-item");
+    const item = target?.closest<HTMLElement>(DRAG_ITEM_SELECTOR);
 
     if (!item || item.classList.contains("is-dragging")) {
+      return;
+    }
+
+    const draggingItem = list.querySelector<HTMLElement>(`${DRAG_ITEM_SELECTOR}.is-dragging`);
+    const sourceType = draggingItem?.dataset.dragType || "";
+    const targetType = item.dataset.dragType || "";
+
+    if (sourceType === "category" && targetType !== "category") {
       return;
     }
 
@@ -896,31 +895,62 @@ function setupFilterListDragDrop(): void {
 
   list.addEventListener("dragleave", (event) => {
     const target = event.target as HTMLElement | null;
-    const item = target?.closest<HTMLElement>(".filter-item");
+    const item = target?.closest<HTMLElement>(DRAG_ITEM_SELECTOR);
     item?.classList.remove("drop-before", "drop-after");
   });
 
   list.addEventListener("drop", (event) => {
     event.preventDefault();
     const target = event.target as HTMLElement | null;
-    const targetItem = target?.closest<HTMLElement>(".filter-item");
-    const sourceId = event.dataTransfer?.getData("text/plain");
+    const targetItem = target?.closest<HTMLElement>(DRAG_ITEM_SELECTOR);
+    const payload = event.dataTransfer?.getData("text/plain") || "";
     clearDropMarkers(list);
     clearDraggableFlags(list);
 
-    if (!targetItem || !sourceId) {
+    if (!targetItem || !payload) {
       return;
     }
 
-    const targetId = targetItem.dataset.filterId || "";
+    const separator = payload.indexOf(":");
+    if (separator < 0) {
+      return;
+    }
+    const sourceType = payload.slice(0, separator);
+    const sourceId = payload.slice(separator + 1);
+    const targetType = targetItem.dataset.dragType || "";
 
-    if (!targetId || targetId === sourceId) {
+    if (!sourceId) {
       return;
     }
 
     const rect = targetItem.getBoundingClientRect();
     const before = event.clientY < rect.top + rect.height / 2;
-    void reorderFilters(sourceId, targetId, before);
+
+    if (sourceType === "filter" && targetType === "filter") {
+      const targetId = targetItem.dataset.filterId || "";
+      if (!targetId || targetId === sourceId) {
+        return;
+      }
+      void reorderFilters(sourceId, targetId, before);
+      return;
+    }
+
+    if (sourceType === "filter" && targetType === "category") {
+      const targetCategoryId = targetItem.dataset.categoryId || "";
+      if (!targetCategoryId) {
+        return;
+      }
+      void reorderFilterToCategoryHeader(sourceId, targetCategoryId, before);
+      return;
+    }
+
+    if (sourceType === "category" && targetType === "category") {
+      const targetCategoryId = targetItem.dataset.categoryId || "";
+      if (!targetCategoryId || targetCategoryId === sourceId) {
+        return;
+      }
+      void reorderCategory(sourceId, targetCategoryId, before);
+    }
   });
 
   list.addEventListener("keydown", (event) => {
@@ -936,9 +966,20 @@ function setupFilterListDragDrop(): void {
     }
 
     event.preventDefault();
-    const filterId = handle.dataset.filterId || "";
     const delta = event.key === "ArrowUp" ? -1 : 1;
-    void moveFilterByOffset(filterId, delta);
+    const dragType = handle.dataset.dragType || "";
+    if (dragType === "category") {
+      const categoryId = handle.dataset.categoryId || "";
+      if (categoryId) {
+        void moveCategory(categoryId, delta);
+      }
+      return;
+    }
+
+    const filterId = handle.dataset.filterId || "";
+    if (filterId) {
+      void moveFilterByOffset(filterId, delta);
+    }
   });
 }
 
@@ -949,7 +990,7 @@ function clearDropMarkers(list: HTMLElement): void {
 }
 
 function clearDraggableFlags(list: HTMLElement): void {
-  for (const el of list.querySelectorAll<HTMLElement>(".filter-item[draggable='true']")) {
+  for (const el of list.querySelectorAll<HTMLElement>("[draggable='true']")) {
     el.draggable = false;
   }
 }
@@ -1103,9 +1144,112 @@ async function moveFilterByOffset(filterId: string, delta: number): Promise<void
   refocusHandle(filterId);
 }
 
+async function reorderFilterToCategoryHeader(
+  sourceId: string,
+  targetCategoryId: string,
+  before: boolean
+): Promise<void> {
+  const sourceIndex = state.filters.findIndex((f) => f.id === sourceId);
+  if (sourceIndex < 0) {
+    return;
+  }
+
+  const targetCatIndex = state.categories.findIndex((c) => c.id === targetCategoryId);
+  if (targetCatIndex < 0) {
+    return;
+  }
+
+  let newCategoryId: string | undefined;
+  if (before) {
+    if (targetCatIndex === 0) {
+      newCategoryId = undefined;
+    } else {
+      newCategoryId = state.categories[targetCatIndex - 1]?.id;
+    }
+  } else {
+    newCategoryId = targetCategoryId;
+  }
+
+  const next = [...state.filters];
+  const [moved] = next.splice(sourceIndex, 1);
+  if (!moved) {
+    return;
+  }
+
+  const movedWithCategory: SavedFilter = { ...moved };
+  if (newCategoryId) {
+    movedWithCategory.categoryId = newCategoryId;
+  } else {
+    delete movedWithCategory.categoryId;
+  }
+
+  const knownIds = new Set(state.categories.map((c) => c.id));
+  const groupOf = (filter: SavedFilter): string | undefined =>
+    filter.categoryId && knownIds.has(filter.categoryId) ? filter.categoryId : undefined;
+
+  let insertIndex: number;
+  if (before) {
+    let lastInGroup = -1;
+    for (let i = 0; i < next.length; i++) {
+      const candidate = next[i];
+      if (candidate && groupOf(candidate) === newCategoryId) {
+        lastInGroup = i;
+      }
+    }
+    insertIndex = lastInGroup + 1;
+  } else {
+    const firstInGroup = next.findIndex((f) => groupOf(f) === newCategoryId);
+    insertIndex = firstInGroup < 0 ? next.length : firstInGroup;
+  }
+
+  next.splice(insertIndex, 0, movedWithCategory);
+  state.filters = next;
+  await saveFilters(state.filters);
+  renderAll();
+  refocusHandle(sourceId);
+}
+
+async function reorderCategory(sourceId: string, targetId: string, before: boolean): Promise<void> {
+  const sourceIndex = state.categories.findIndex((c) => c.id === sourceId);
+  const targetIndex = state.categories.findIndex((c) => c.id === targetId);
+
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+    return;
+  }
+
+  const next = [...state.categories];
+  const [moved] = next.splice(sourceIndex, 1);
+  if (!moved) {
+    return;
+  }
+
+  let insertIndex = next.findIndex((c) => c.id === targetId);
+  if (insertIndex < 0) {
+    return;
+  }
+  if (!before) {
+    insertIndex += 1;
+  }
+  next.splice(insertIndex, 0, moved);
+  state.categories = next;
+  await saveCategories(state.categories);
+  renderAll();
+  refocusCategoryHandle(sourceId);
+}
+
 function refocusHandle(filterId: string): void {
   const list = document.getElementById("filter-list");
-  const handle = list?.querySelector<HTMLButtonElement>(`.drag-handle[data-filter-id="${cssEscape(filterId)}"]`);
+  const handle = list?.querySelector<HTMLButtonElement>(
+    `.drag-handle[data-drag-type="filter"][data-filter-id="${cssEscape(filterId)}"]`
+  );
+  handle?.focus();
+}
+
+function refocusCategoryHandle(categoryId: string): void {
+  const list = document.getElementById("filter-list");
+  const handle = list?.querySelector<HTMLButtonElement>(
+    `.drag-handle[data-drag-type="category"][data-category-id="${cssEscape(categoryId)}"]`
+  );
   handle?.focus();
 }
 

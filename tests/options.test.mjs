@@ -217,7 +217,7 @@ test("renderFilterList groups by category with uncategorized first", () => {
 
   const sequence = Array.from(root.children).map((node) => {
     if (node.classList.contains("filter-list-category-header")) {
-      return `H:${node.querySelector(".filter-list-category-name").textContent}`;
+      return `H:${node.querySelector(".category-name-input").value}`;
     }
     return `F:${node.querySelector(".filter-name").textContent}`;
   });
@@ -230,6 +230,39 @@ test("renderFilterList groups by category with uncategorized first", () => {
     "H:CLI",
     "F:CLI A"
   ]);
+});
+
+test("renderFilterList category header has drag handle, rename input, and delete button", () => {
+  const dom = new JSDOM("<main id=\"root\"></main>");
+  globalThis.document = dom.window.document;
+  const root = dom.window.document.getElementById("root");
+
+  renderFilterList(
+    root,
+    [
+      { id: "f1", name: "A", repoOwner: "o", repoName: "r", query: "is:open", enabled: true, pollingEnabled: false, sort: "updated-desc", includeDrafts: true, categoryId: "cat-mono" }
+    ],
+    [{ id: "cat-mono", name: "Monolith" }]
+  );
+
+  const header = root.querySelector(".filter-list-category-header");
+  assert.ok(header, "expected a category header");
+  assert.equal(header.dataset.dragType, "category");
+  assert.equal(header.dataset.categoryId, "cat-mono");
+
+  const handle = header.querySelector(".drag-handle");
+  assert.ok(handle, "expected a drag handle on the header");
+  assert.equal(handle.dataset.dragType, "category");
+  assert.equal(handle.dataset.categoryId, "cat-mono");
+
+  const input = header.querySelector("input.category-name-input");
+  assert.ok(input, "expected an inline rename input");
+  assert.equal(input.value, "Monolith");
+  assert.equal(input.dataset.categoryId, "cat-mono");
+
+  const deleteButton = header.querySelector("button[data-action='category-delete']");
+  assert.ok(deleteButton, "expected a delete button on the header");
+  assert.equal(deleteButton.dataset.categoryId, "cat-mono");
 });
 
 test("renderFilterList renders actions for saved filters", () => {
