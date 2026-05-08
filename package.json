@@ -1,5 +1,5 @@
 {
-  "name": "gitmarks",
+  "name": "octoreview",
   "version": "0.1.0",
   "description": "A Chrome extension for saved GitHub pull request filters.",
   "type": "module",

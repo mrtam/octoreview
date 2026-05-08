@@ -43,7 +43,7 @@ test("renderPopup shows cached PR rows and open URLs", () => {
           {
             id: 1,
             number: 42,
-            title: "Ship Gitmarks",
+            title: "Ship OctoReview",
             url: "https://github.com/octo-org/octo-repo/pull/42",
             author: "octocat",
             labels: [{ name: "ui", color: "a2eeef" }],
@@ -62,7 +62,7 @@ test("renderPopup shows cached PR rows and open URLs", () => {
     }
   );
 
-  assert.equal(root.querySelector(".pr-title").textContent, "Ship Gitmarks");
+  assert.equal(root.querySelector(".pr-title").textContent, "Ship OctoReview");
   assert.match(root.querySelector(".pr-meta").textContent, /^#42 · octocat · updated /);
   assert.doesNotMatch(root.querySelector(".pr-meta").textContent, / open /);
   assert.equal(
