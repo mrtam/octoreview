@@ -3,16 +3,19 @@ import { FILTER_ICONS, FILTER_ICON_CATEGORIES } from "./icons.js";
 import {
   clearGitHubToken,
   DEFAULT_APP_SETTINGS,
+  deleteCategory,
   getAppSettings,
+  getCategories,
   getFilters,
   getGitHubToken,
   isPollingIntervalMinutes,
   POLLING_INTERVAL_OPTIONS,
   saveAppSettings,
+  saveCategories,
   saveFilters,
   saveGitHubToken
 } from "./storage.js";
-import type { AppSettings, FilterSort, PollingIntervalMinutes, SavedFilter } from "./types.js";
+import type { AppSettings, Category, FilterSort, PollingIntervalMinutes, SavedFilter } from "./types.js";
 import { UI_ICONS, type UiIconName } from "./ui-icons.js";
 
 type ListAction = "open" | "edit" | "delete";
@@ -35,15 +38,18 @@ interface FilterDraft {
   pollingEnabled: boolean;
   includeDrafts: boolean;
   sort: FilterSort;
+  categoryId: string;
 }
 
 interface OptionsState {
   filters: SavedFilter[];
+  categories: Category[];
   appSettings: AppSettings;
 }
 
 const state: OptionsState = {
   filters: [],
+  categories: [],
   appSettings: DEFAULT_APP_SETTINGS
 };
 
@@ -70,7 +76,7 @@ export function validateFilterDraft(draft: FilterDraft): string[] {
 }
 
 export function draftToFilter(draft: FilterDraft): SavedFilter {
-  return {
+  const filter: SavedFilter = {
     id: draft.id || createId(),
     name: draft.name.trim(),
     repoOwner: draft.repoOwner.trim(),
@@ -82,6 +88,13 @@ export function draftToFilter(draft: FilterDraft): SavedFilter {
     includeDrafts: draft.includeDrafts,
     sort: draft.sort
   };
+
+  const categoryId = draft.categoryId.trim();
+  if (categoryId) {
+    filter.categoryId = categoryId;
+  }
+
+  return filter;
 }
 
 export function setPollingIntervalSelectValue(select: HTMLSelectElement, settings: AppSettings): void {
@@ -108,7 +121,11 @@ export function updateSearchSyntaxState(
   }
 }
 
-export function renderFilterList(root: HTMLElement, filters: SavedFilter[]): void {
+export function renderFilterList(
+  root: HTMLElement,
+  filters: SavedFilter[],
+  categories: Category[] = []
+): void {
   root.replaceChildren();
 
   if (filters.length === 0) {
@@ -119,56 +136,151 @@ export function renderFilterList(root: HTMLElement, filters: SavedFilter[]): voi
     return;
   }
 
+  const knownCategoryIds = new Set(categories.map((category) => category.id));
+  const filtersByCategory = new Map<string, SavedFilter[]>();
+  const uncategorized: SavedFilter[] = [];
+
   for (const filter of filters) {
-    const item = document.createElement("article");
-    item.className = "filter-item";
-    item.dataset.filterId = filter.id;
-    item.dataset.disabled = String(!filter.enabled);
-    item.dataset.polling = String(filter.pollingEnabled);
-
-    const handle = document.createElement("button");
-    handle.type = "button";
-    handle.className = "drag-handle";
-    handle.dataset.filterId = filter.id;
-    handle.setAttribute("aria-label", `Reorder ${filter.name}`);
-    handle.title = "Drag to reorder";
-    handle.innerHTML = UI_ICONS.grip;
-
-    const details = document.createElement("div");
-    details.className = "filter-details-col";
-    const nameRow = document.createElement("div");
-    nameRow.className = "filter-name-row";
-    const name = document.createElement("div");
-    name.className = "filter-name";
-    name.textContent = filter.name;
-    if (filter.icon) {
-      const icon = document.createElement("span");
-      icon.className = "filter-list-icon";
-      if (isEmojiIcon(filter.icon)) {
-        icon.classList.add("filter-list-icon-emoji");
-      }
-      icon.textContent = filter.icon;
-      nameRow.append(icon);
+    const categoryId = filter.categoryId && knownCategoryIds.has(filter.categoryId) ? filter.categoryId : null;
+    if (!categoryId) {
+      uncategorized.push(filter);
+      continue;
     }
-    nameRow.append(name);
-    const meta = document.createElement("div");
-    meta.className = "filter-details";
-    meta.textContent = `${filter.repoOwner}/${filter.repoName} · ${filter.query || "is:open"} · ${filter.sort}${filter.pollingEnabled ? " · polling" : ""}`;
-    details.append(nameRow, meta);
-
-    const actions = document.createElement("div");
-    actions.className = "item-actions";
-    for (const spec of LIST_ACTIONS) {
-      actions.append(createListButton(spec.action, filter.id, filter.name, spec.icon, spec.label(filter.name), spec.danger ?? false));
+    const list = filtersByCategory.get(categoryId);
+    if (list) {
+      list.push(filter);
+    } else {
+      filtersByCategory.set(categoryId, [filter]);
     }
+  }
 
-    item.append(handle, details, actions);
-    root.append(item);
+  for (const filter of uncategorized) {
+    root.append(createFilterItem(filter));
+  }
+
+  for (const category of categories) {
+    const categoryFilters = filtersByCategory.get(category.id) ?? [];
+    root.append(createFilterListCategoryHeader(category, categoryFilters.length));
+    for (const filter of categoryFilters) {
+      root.append(createFilterItem(filter));
+    }
   }
 }
 
+function createFilterItem(filter: SavedFilter): HTMLElement {
+  const item = document.createElement("article");
+  item.className = "filter-item";
+  item.dataset.dragType = "filter";
+  item.dataset.filterId = filter.id;
+  item.dataset.disabled = String(!filter.enabled);
+  item.dataset.polling = String(filter.pollingEnabled);
+  if (filter.categoryId) {
+    item.dataset.categoryId = filter.categoryId;
+  }
+
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "drag-handle";
+  handle.dataset.dragType = "filter";
+  handle.dataset.filterId = filter.id;
+  handle.setAttribute("aria-label", `Reorder ${filter.name}`);
+  handle.title = "Drag to reorder";
+  handle.innerHTML = UI_ICONS.grip;
+
+  const details = document.createElement("div");
+  details.className = "filter-details-col";
+  const nameRow = document.createElement("div");
+  nameRow.className = "filter-name-row";
+  const name = document.createElement("div");
+  name.className = "filter-name";
+  name.textContent = filter.name;
+  if (filter.icon) {
+    const icon = document.createElement("span");
+    icon.className = "filter-list-icon";
+    if (isEmojiIcon(filter.icon)) {
+      icon.classList.add("filter-list-icon-emoji");
+    }
+    icon.textContent = filter.icon;
+    nameRow.append(icon);
+  }
+  nameRow.append(name);
+  const meta = document.createElement("div");
+  meta.className = "filter-details";
+  meta.textContent = `${filter.repoOwner}/${filter.repoName} · ${filter.query || "is:open"} · ${filter.sort}${filter.pollingEnabled ? " · polling" : ""}`;
+  details.append(nameRow, meta);
+
+  const actions = document.createElement("div");
+  actions.className = "item-actions";
+  for (const spec of LIST_ACTIONS) {
+    actions.append(createListButton(spec.action, filter.id, filter.name, spec.icon, spec.label(filter.name), spec.danger ?? false));
+  }
+
+  item.append(handle, details, actions);
+  return item;
+}
+
+function createFilterListCategoryHeader(category: Category, count: number): HTMLElement {
+  const header = document.createElement("div");
+  header.className = "filter-list-category-header";
+  header.dataset.dragType = "category";
+  header.dataset.categoryId = category.id;
+
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "drag-handle";
+  handle.dataset.dragType = "category";
+  handle.dataset.categoryId = category.id;
+  handle.setAttribute("aria-label", `Reorder category ${category.name || "Untitled"}`);
+  handle.title = "Drag to reorder";
+  handle.innerHTML = UI_ICONS.grip;
+
+  const name = document.createElement("input");
+  name.type = "text";
+  name.className = "category-name-input";
+  name.value = category.name;
+  name.dataset.categoryId = category.id;
+  name.setAttribute("aria-label", `Rename ${category.name || "category"}`);
+
+  const countNode = document.createElement("span");
+  countNode.className = "filter-list-category-count";
+  countNode.textContent = count === 1 ? "1 filter" : `${count} filters`;
+
+  const deleteButton = createCategoryActionButton(
+    "category-delete",
+    category.id,
+    UI_ICONS.delete,
+    `Delete ${category.name || "category"}`,
+    true
+  );
+
+  header.append(handle, name, countNode, deleteButton);
+  return header;
+}
+
+function createCategoryActionButton(
+  action: string,
+  categoryId: string,
+  iconHtml: string,
+  ariaLabel: string,
+  danger = false
+): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = danger ? "icon-button icon-button-danger" : "icon-button";
+  button.innerHTML = iconHtml;
+  button.dataset.action = action;
+  button.dataset.categoryId = categoryId;
+  button.setAttribute("aria-label", ariaLabel);
+  button.title = ariaLabel;
+  return button;
+}
+
 async function bootstrapOptions(): Promise<void> {
-  [state.filters, state.appSettings] = await Promise.all([getFilters(), getAppSettings()]);
+  [state.filters, state.categories, state.appSettings] = await Promise.all([
+    getFilters(),
+    getCategories(),
+    getAppSettings()
+  ]);
 
   inflateInlineIcons(document);
   populatePollingSettingsForm();
@@ -193,6 +305,10 @@ async function bootstrapOptions(): Promise<void> {
   getElement("new-filter-button").addEventListener("click", () => {
     resetFilterForm();
     openEditorDialog("new");
+  });
+
+  getElement("new-category-button").addEventListener("click", () => {
+    void createNewCategory();
   });
 
   getElement("filter-form").addEventListener("submit", (event) => {
@@ -223,7 +339,7 @@ async function bootstrapOptions(): Promise<void> {
 
   getElement("filter-list").addEventListener("click", (event) => {
     const target = event.target as HTMLElement | null;
-    const button = target?.closest("button");
+    const button = target?.closest<HTMLButtonElement>("button");
 
     if (!button) {
       return;
@@ -233,7 +349,29 @@ async function bootstrapOptions(): Promise<void> {
       return;
     }
 
-    void handleFilterAction(button.dataset.action || "", button.dataset.filterId || "");
+    const action = button.dataset.action || "";
+    const categoryId = button.dataset.categoryId || "";
+    if (action === "category-delete" && categoryId) {
+      void handleCategoryAction(action, categoryId);
+      return;
+    }
+
+    void handleFilterAction(action, button.dataset.filterId || "");
+  });
+
+  getElement("filter-list").addEventListener("change", (event) => {
+    const target = event.target as HTMLElement | null;
+    if (target instanceof HTMLInputElement && target.classList.contains("category-name-input")) {
+      void renameCategoryFromInput(target);
+    }
+  });
+
+  getElement("filter-list").addEventListener("keydown", (event) => {
+    const target = event.target as HTMLElement | null;
+    if (event.key === "Enter" && target instanceof HTMLInputElement && target.classList.contains("category-name-input")) {
+      event.preventDefault();
+      target.blur();
+    }
   });
 
   renderAll();
@@ -280,6 +418,7 @@ async function clearTokenFromForm(): Promise<void> {
 
 async function savePollingSettingsFromForm(): Promise<void> {
   state.appSettings = {
+    ...state.appSettings,
     pollingIntervalMinutes: readPollingIntervalSelectValue(getInput("polling-interval"))
   };
   await saveAppSettings(state.appSettings);
@@ -360,7 +499,8 @@ function readFilterDraft(): FilterDraft {
     enabled: getInput("filter-enabled").checked,
     pollingEnabled: getInput("filter-polling-enabled").checked,
     includeDrafts: getInput("filter-include-drafts").checked,
-    sort: getInput("filter-sort").value as FilterSort
+    sort: getInput("filter-sort").value as FilterSort,
+    categoryId: getInput("filter-category").value
   };
 }
 
@@ -376,6 +516,7 @@ function populateFilterForm(filter: SavedFilter): void {
   getInput("filter-polling-enabled").checked = filter.pollingEnabled;
   getInput("filter-include-drafts").checked = filter.includeDrafts !== false;
   getInput("filter-sort").value = filter.sort;
+  getInput("filter-category").value = filter.categoryId || "";
   getElement("filter-errors").textContent = "";
   syncSearchSyntaxState();
 }
@@ -392,8 +533,27 @@ function resetFilterForm(): void {
   getInput("filter-polling-enabled").checked = false;
   getInput("filter-include-drafts").checked = true;
   getInput("filter-sort").value = "updated-desc";
+  getInput("filter-category").value = "";
   getElement("filter-errors").textContent = "";
   syncSearchSyntaxState();
+}
+
+function populateCategorySelect(): void {
+  const select = getInput("filter-category");
+  const previousValue = select.value;
+  select.replaceChildren();
+  const noneOption = document.createElement("option");
+  noneOption.value = "";
+  noneOption.textContent = "(None)";
+  select.append(noneOption);
+  for (const category of state.categories) {
+    const option = document.createElement("option");
+    option.value = category.id;
+    option.textContent = category.name || "Untitled";
+    select.append(option);
+  }
+  const validIds = new Set(state.categories.map((c) => c.id));
+  select.value = previousValue && validIds.has(previousValue) ? previousValue : "";
 }
 
 function setupIconPickerDialog(): void {
@@ -533,7 +693,8 @@ function renderIconTrigger(value: string): void {
 }
 
 function renderAll(): void {
-  renderFilterList(getElement("filter-list"), state.filters);
+  populateCategorySelect();
+  renderFilterList(getElement("filter-list"), state.filters, state.categories);
 }
 
 function populatePollingSettingsForm(): void {
@@ -660,13 +821,15 @@ function closeEditorDialog(): void {
   }
 }
 
+const DRAG_ITEM_SELECTOR = ".filter-item, .filter-list-category-header";
+
 function setupFilterListDragDrop(): void {
   const list = getElement("filter-list");
 
   list.addEventListener("mousedown", (event) => {
     const target = event.target as HTMLElement | null;
     const handle = target?.closest<HTMLButtonElement>(".drag-handle");
-    const item = handle?.closest<HTMLElement>(".filter-item");
+    const item = handle?.closest<HTMLElement>(DRAG_ITEM_SELECTOR);
 
     if (handle && item) {
       item.draggable = true;
@@ -675,7 +838,7 @@ function setupFilterListDragDrop(): void {
 
   list.addEventListener("mouseup", () => clearDraggableFlags(list));
   list.addEventListener("dragend", (event) => {
-    const item = (event.target as HTMLElement | null)?.closest<HTMLElement>(".filter-item");
+    const item = (event.target as HTMLElement | null)?.closest<HTMLElement>(DRAG_ITEM_SELECTOR);
     item?.classList.remove("is-dragging");
     clearDropMarkers(list);
     clearDraggableFlags(list);
@@ -683,23 +846,39 @@ function setupFilterListDragDrop(): void {
 
   list.addEventListener("dragstart", (event) => {
     const target = event.target as HTMLElement | null;
-    const item = target?.closest<HTMLElement>(".filter-item");
+    const item = target?.closest<HTMLElement>(DRAG_ITEM_SELECTOR);
 
     if (!item || !item.draggable || !event.dataTransfer) {
       event.preventDefault();
       return;
     }
 
+    const sourceType = item.dataset.dragType || "";
+    const sourceId = sourceType === "category" ? item.dataset.categoryId || "" : item.dataset.filterId || "";
+
+    if (!sourceType || !sourceId) {
+      event.preventDefault();
+      return;
+    }
+
     event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", item.dataset.filterId || "");
+    event.dataTransfer.setData("text/plain", `${sourceType}:${sourceId}`);
     item.classList.add("is-dragging");
   });
 
   list.addEventListener("dragover", (event) => {
     const target = event.target as HTMLElement | null;
-    const item = target?.closest<HTMLElement>(".filter-item");
+    const item = target?.closest<HTMLElement>(DRAG_ITEM_SELECTOR);
 
     if (!item || item.classList.contains("is-dragging")) {
+      return;
+    }
+
+    const draggingItem = list.querySelector<HTMLElement>(`${DRAG_ITEM_SELECTOR}.is-dragging`);
+    const sourceType = draggingItem?.dataset.dragType || "";
+    const targetType = item.dataset.dragType || "";
+
+    if (sourceType === "category" && targetType !== "category") {
       return;
     }
 
@@ -716,31 +895,62 @@ function setupFilterListDragDrop(): void {
 
   list.addEventListener("dragleave", (event) => {
     const target = event.target as HTMLElement | null;
-    const item = target?.closest<HTMLElement>(".filter-item");
+    const item = target?.closest<HTMLElement>(DRAG_ITEM_SELECTOR);
     item?.classList.remove("drop-before", "drop-after");
   });
 
   list.addEventListener("drop", (event) => {
     event.preventDefault();
     const target = event.target as HTMLElement | null;
-    const targetItem = target?.closest<HTMLElement>(".filter-item");
-    const sourceId = event.dataTransfer?.getData("text/plain");
+    const targetItem = target?.closest<HTMLElement>(DRAG_ITEM_SELECTOR);
+    const payload = event.dataTransfer?.getData("text/plain") || "";
     clearDropMarkers(list);
     clearDraggableFlags(list);
 
-    if (!targetItem || !sourceId) {
+    if (!targetItem || !payload) {
       return;
     }
 
-    const targetId = targetItem.dataset.filterId || "";
+    const separator = payload.indexOf(":");
+    if (separator < 0) {
+      return;
+    }
+    const sourceType = payload.slice(0, separator);
+    const sourceId = payload.slice(separator + 1);
+    const targetType = targetItem.dataset.dragType || "";
 
-    if (!targetId || targetId === sourceId) {
+    if (!sourceId) {
       return;
     }
 
     const rect = targetItem.getBoundingClientRect();
     const before = event.clientY < rect.top + rect.height / 2;
-    void reorderFilters(sourceId, targetId, before);
+
+    if (sourceType === "filter" && targetType === "filter") {
+      const targetId = targetItem.dataset.filterId || "";
+      if (!targetId || targetId === sourceId) {
+        return;
+      }
+      void reorderFilters(sourceId, targetId, before);
+      return;
+    }
+
+    if (sourceType === "filter" && targetType === "category") {
+      const targetCategoryId = targetItem.dataset.categoryId || "";
+      if (!targetCategoryId) {
+        return;
+      }
+      void reorderFilterToCategoryHeader(sourceId, targetCategoryId, before);
+      return;
+    }
+
+    if (sourceType === "category" && targetType === "category") {
+      const targetCategoryId = targetItem.dataset.categoryId || "";
+      if (!targetCategoryId || targetCategoryId === sourceId) {
+        return;
+      }
+      void reorderCategory(sourceId, targetCategoryId, before);
+    }
   });
 
   list.addEventListener("keydown", (event) => {
@@ -756,9 +966,20 @@ function setupFilterListDragDrop(): void {
     }
 
     event.preventDefault();
-    const filterId = handle.dataset.filterId || "";
     const delta = event.key === "ArrowUp" ? -1 : 1;
-    void moveFilterByOffset(filterId, delta);
+    const dragType = handle.dataset.dragType || "";
+    if (dragType === "category") {
+      const categoryId = handle.dataset.categoryId || "";
+      if (categoryId) {
+        void moveCategory(categoryId, delta);
+      }
+      return;
+    }
+
+    const filterId = handle.dataset.filterId || "";
+    if (filterId) {
+      void moveFilterByOffset(filterId, delta);
+    }
   });
 }
 
@@ -769,9 +990,94 @@ function clearDropMarkers(list: HTMLElement): void {
 }
 
 function clearDraggableFlags(list: HTMLElement): void {
-  for (const el of list.querySelectorAll<HTMLElement>(".filter-item[draggable='true']")) {
+  for (const el of list.querySelectorAll<HTMLElement>("[draggable='true']")) {
     el.draggable = false;
   }
+}
+
+async function createNewCategory(): Promise<void> {
+  const name = window.prompt("New category name");
+  if (name === null) {
+    return;
+  }
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return;
+  }
+  const category: Category = { id: createId(), name: trimmed };
+  state.categories = [...state.categories, category];
+  await saveCategories(state.categories);
+  renderAll();
+  setStatus("Category created.");
+}
+
+async function handleCategoryAction(action: string, categoryId: string): Promise<void> {
+  if (!categoryId) {
+    return;
+  }
+  if (action === "category-delete") {
+    const category = state.categories.find((c) => c.id === categoryId);
+    if (!category) {
+      return;
+    }
+    if (!window.confirm(`Delete category "${category.name}"? Filters in it will become uncategorized.`)) {
+      return;
+    }
+    const result = await deleteCategory(categoryId);
+    state.categories = result.categories;
+    state.filters = result.filters;
+    renderAll();
+    setStatus("Category deleted.");
+    return;
+  }
+
+  if (action === "category-move-up") {
+    await moveCategory(categoryId, -1);
+    return;
+  }
+
+  if (action === "category-move-down") {
+    await moveCategory(categoryId, 1);
+  }
+}
+
+async function moveCategory(categoryId: string, delta: number): Promise<void> {
+  const index = state.categories.findIndex((c) => c.id === categoryId);
+  const targetIndex = index + delta;
+  if (index < 0 || targetIndex < 0 || targetIndex >= state.categories.length) {
+    return;
+  }
+  const next = [...state.categories];
+  const a = next[index];
+  const b = next[targetIndex];
+  if (!a || !b) {
+    return;
+  }
+  next[index] = b;
+  next[targetIndex] = a;
+  state.categories = next;
+  await saveCategories(state.categories);
+  renderAll();
+}
+
+async function renameCategoryFromInput(input: HTMLInputElement): Promise<void> {
+  const categoryId = input.dataset.categoryId || "";
+  const trimmed = input.value.trim();
+  const existing = state.categories.find((c) => c.id === categoryId);
+  if (!existing) {
+    return;
+  }
+  if (!trimmed) {
+    input.value = existing.name;
+    return;
+  }
+  if (existing.name === trimmed) {
+    return;
+  }
+  state.categories = state.categories.map((c) => (c.id === categoryId ? { ...c, name: trimmed } : c));
+  await saveCategories(state.categories);
+  renderAll();
+  setStatus("Category renamed.");
 }
 
 async function reorderFilters(sourceId: string, targetId: string, before: boolean): Promise<void> {
@@ -782,11 +1088,19 @@ async function reorderFilters(sourceId: string, targetId: string, before: boolea
     return;
   }
 
+  const target = state.filters[targetIndex];
   const next = [...state.filters];
   const [moved] = next.splice(sourceIndex, 1);
 
-  if (!moved) {
+  if (!moved || !target) {
     return;
+  }
+
+  const movedWithCategory: SavedFilter = { ...moved };
+  if (target.categoryId) {
+    movedWithCategory.categoryId = target.categoryId;
+  } else {
+    delete movedWithCategory.categoryId;
   }
 
   let insertIndex = next.findIndex((f) => f.id === targetId);
@@ -799,7 +1113,7 @@ async function reorderFilters(sourceId: string, targetId: string, before: boolea
     insertIndex += 1;
   }
 
-  next.splice(insertIndex, 0, moved);
+  next.splice(insertIndex, 0, movedWithCategory);
   state.filters = next;
   await saveFilters(state.filters);
   renderAll();
@@ -830,9 +1144,112 @@ async function moveFilterByOffset(filterId: string, delta: number): Promise<void
   refocusHandle(filterId);
 }
 
+async function reorderFilterToCategoryHeader(
+  sourceId: string,
+  targetCategoryId: string,
+  before: boolean
+): Promise<void> {
+  const sourceIndex = state.filters.findIndex((f) => f.id === sourceId);
+  if (sourceIndex < 0) {
+    return;
+  }
+
+  const targetCatIndex = state.categories.findIndex((c) => c.id === targetCategoryId);
+  if (targetCatIndex < 0) {
+    return;
+  }
+
+  let newCategoryId: string | undefined;
+  if (before) {
+    if (targetCatIndex === 0) {
+      newCategoryId = undefined;
+    } else {
+      newCategoryId = state.categories[targetCatIndex - 1]?.id;
+    }
+  } else {
+    newCategoryId = targetCategoryId;
+  }
+
+  const next = [...state.filters];
+  const [moved] = next.splice(sourceIndex, 1);
+  if (!moved) {
+    return;
+  }
+
+  const movedWithCategory: SavedFilter = { ...moved };
+  if (newCategoryId) {
+    movedWithCategory.categoryId = newCategoryId;
+  } else {
+    delete movedWithCategory.categoryId;
+  }
+
+  const knownIds = new Set(state.categories.map((c) => c.id));
+  const groupOf = (filter: SavedFilter): string | undefined =>
+    filter.categoryId && knownIds.has(filter.categoryId) ? filter.categoryId : undefined;
+
+  let insertIndex: number;
+  if (before) {
+    let lastInGroup = -1;
+    for (let i = 0; i < next.length; i++) {
+      const candidate = next[i];
+      if (candidate && groupOf(candidate) === newCategoryId) {
+        lastInGroup = i;
+      }
+    }
+    insertIndex = lastInGroup + 1;
+  } else {
+    const firstInGroup = next.findIndex((f) => groupOf(f) === newCategoryId);
+    insertIndex = firstInGroup < 0 ? next.length : firstInGroup;
+  }
+
+  next.splice(insertIndex, 0, movedWithCategory);
+  state.filters = next;
+  await saveFilters(state.filters);
+  renderAll();
+  refocusHandle(sourceId);
+}
+
+async function reorderCategory(sourceId: string, targetId: string, before: boolean): Promise<void> {
+  const sourceIndex = state.categories.findIndex((c) => c.id === sourceId);
+  const targetIndex = state.categories.findIndex((c) => c.id === targetId);
+
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+    return;
+  }
+
+  const next = [...state.categories];
+  const [moved] = next.splice(sourceIndex, 1);
+  if (!moved) {
+    return;
+  }
+
+  let insertIndex = next.findIndex((c) => c.id === targetId);
+  if (insertIndex < 0) {
+    return;
+  }
+  if (!before) {
+    insertIndex += 1;
+  }
+  next.splice(insertIndex, 0, moved);
+  state.categories = next;
+  await saveCategories(state.categories);
+  renderAll();
+  refocusCategoryHandle(sourceId);
+}
+
 function refocusHandle(filterId: string): void {
   const list = document.getElementById("filter-list");
-  const handle = list?.querySelector<HTMLButtonElement>(`.drag-handle[data-filter-id="${cssEscape(filterId)}"]`);
+  const handle = list?.querySelector<HTMLButtonElement>(
+    `.drag-handle[data-drag-type="filter"][data-filter-id="${cssEscape(filterId)}"]`
+  );
+  handle?.focus();
+}
+
+function refocusCategoryHandle(categoryId: string): void {
+  const list = document.getElementById("filter-list");
+  const handle = list?.querySelector<HTMLButtonElement>(
+    `.drag-handle[data-drag-type="category"][data-category-id="${cssEscape(categoryId)}"]`
+  );
   handle?.focus();
 }
 

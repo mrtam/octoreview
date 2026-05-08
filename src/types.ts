@@ -12,6 +12,12 @@ export interface SavedFilter {
   pollingEnabled: boolean;
   sort: FilterSort;
   includeDrafts: boolean;
+  categoryId?: string;
+}
+
+export interface Category {
+  id: string;
+  name: string;
 }
 
 export interface PullRequestLabel {
@@ -45,6 +51,7 @@ export type CacheByFilterId = Record<string, FilterCacheEntry>;
 
 export interface AppSettings {
   pollingIntervalMinutes: PollingIntervalMinutes;
+  collapsedCategoryIds: string[];
 }
 
 export interface FilterNotificationState {
@@ -59,6 +66,7 @@ export type NotificationStateByFilterId = Record<string, FilterNotificationState
 export interface StorageShape {
   githubToken?: string;
   filters: SavedFilter[];
+  categories: Category[];
   cacheByFilterId: CacheByFilterId;
   appSettings: AppSettings;
   notificationStateByFilterId: NotificationStateByFilterId;

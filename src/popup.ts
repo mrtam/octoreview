@@ -1,14 +1,25 @@
 import { searchPullRequests } from "./github.js";
 import {
+  DEFAULT_APP_SETTINGS,
+  getAppSettings,
   getCacheByFilterId,
+  getCategories,
   getFilters,
   getGitHubToken,
   getNotificationStateByFilterId,
+  saveAppSettings,
   saveNotificationStateByFilterId,
   saveFilterCacheEntry
 } from "./storage.js";
 import { formatRelativeTime } from "./time.js";
-import type { CacheByFilterId, FilterCacheEntry, NotificationStateByFilterId, SavedFilter } from "./types.js";
+import type {
+  AppSettings,
+  CacheByFilterId,
+  Category,
+  FilterCacheEntry,
+  NotificationStateByFilterId,
+  SavedFilter
+} from "./types.js";
 
 interface PopupRenderState {
   tokenConfigured: boolean;
@@ -17,12 +28,16 @@ interface PopupRenderState {
   pagingFilterIds?: Set<string>;
   activeFilterId?: string | null;
   expandedFilterIds?: Set<string>;
+  categories?: Category[];
+  collapsedCategoryIds?: Set<string>;
 }
 
 interface PopupState {
   filters: SavedFilter[];
+  categories: Category[];
   cacheByFilterId: CacheByFilterId;
   notificationStateByFilterId: NotificationStateByFilterId;
+  appSettings: AppSettings;
   token: string;
   loadingFilterIds: Set<string>;
   pagingFilterIds: Set<string>;
@@ -32,8 +47,10 @@ interface PopupState {
 
 const state: PopupState = {
   filters: [],
+  categories: [],
   cacheByFilterId: {},
   notificationStateByFilterId: {},
+  appSettings: DEFAULT_APP_SETTINGS,
   token: "",
   loadingFilterIds: new Set(),
   pagingFilterIds: new Set(),
@@ -92,11 +109,20 @@ async function bootstrapPopup(): Promise<void> {
 
   await dismissToolbarBadge();
 
-  [state.token, state.filters, state.cacheByFilterId, state.notificationStateByFilterId] = await Promise.all([
+  [
+    state.token,
+    state.filters,
+    state.categories,
+    state.cacheByFilterId,
+    state.notificationStateByFilterId,
+    state.appSettings
+  ] = await Promise.all([
     getGitHubToken(),
     getFilters(),
+    getCategories(),
     getCacheByFilterId(),
-    getNotificationStateByFilterId()
+    getNotificationStateByFilterId(),
+    getAppSettings()
   ]);
 
   state.activeFilterId = state.filters.find((filter) => filter.enabled)?.id || null;
@@ -139,6 +165,10 @@ async function bootstrapPopup(): Promise<void> {
 
     if (action === "load-more" && button.dataset.filterId) {
       void loadMoreFor(button.dataset.filterId, root);
+    }
+
+    if (action === "toggle-category" && button.dataset.categoryId) {
+      void toggleCategoryCollapse(button.dataset.categoryId, root);
     }
   });
 
@@ -313,7 +343,9 @@ function render(root: HTMLElement): void {
     loadingFilterIds: state.loadingFilterIds,
     unreadFilterIds: getUnreadFilterIds(state.notificationStateByFilterId),
     pagingFilterIds: state.pagingFilterIds,
-    activeFilterId: state.activeFilterId
+    activeFilterId: state.activeFilterId,
+    categories: state.categories,
+    collapsedCategoryIds: new Set(state.appSettings.collapsedCategoryIds)
   });
 
   const newPanel = root.querySelector<HTMLElement>(".menu-panel");
@@ -380,12 +412,51 @@ function createMenuShell(
   menu.className = "filter-menu";
   menu.setAttribute("aria-label", "Saved pull request filters");
 
+  const categories = renderState.categories ?? [];
+  const collapsed = renderState.collapsedCategoryIds ?? new Set<string>();
+  const knownCategoryIds = new Set(categories.map((category) => category.id));
+  const filtersByCategory = new Map<string, SavedFilter[]>();
+  const uncategorized: SavedFilter[] = [];
+
   for (const filter of filters) {
+    const categoryId = filter.categoryId && knownCategoryIds.has(filter.categoryId) ? filter.categoryId : null;
+    if (!categoryId) {
+      uncategorized.push(filter);
+      continue;
+    }
+    const list = filtersByCategory.get(categoryId);
+    if (list) {
+      list.push(filter);
+    } else {
+      filtersByCategory.set(categoryId, [filter]);
+    }
+  }
+
+  const renderFilter = (filter: SavedFilter) => {
     menu.append(createFilterMenuItem(filter, cacheByFilterId[filter.id], {
       active: filter.id === activeFilter.id,
       loading: renderState.loadingFilterIds.has(filter.id),
       unread: (renderState.unreadFilterIds ?? new Set()).has(filter.id)
     }));
+  };
+
+  for (const filter of uncategorized) {
+    renderFilter(filter);
+  }
+
+  for (const category of categories) {
+    const categoryFilters = filtersByCategory.get(category.id);
+    if (!categoryFilters || categoryFilters.length === 0) {
+      continue;
+    }
+    const isCollapsed = collapsed.has(category.id);
+    menu.append(createCategoryHeader(category, categoryFilters.length, isCollapsed));
+
+    if (!isCollapsed) {
+      for (const filter of categoryFilters) {
+        renderFilter(filter);
+      }
+    }
   }
 
   const panel = document.createElement("section");
@@ -394,6 +465,32 @@ function createMenuShell(
 
   shell.append(menu, panel);
   return shell;
+}
+
+function createCategoryHeader(category: Category, count: number, collapsed: boolean): HTMLElement {
+  const header = document.createElement("button");
+  header.className = "filter-category-header";
+  header.type = "button";
+  header.dataset.action = "toggle-category";
+  header.dataset.categoryId = category.id;
+  header.dataset.collapsed = String(collapsed);
+  header.setAttribute("aria-expanded", String(!collapsed));
+
+  const chevron = document.createElement("span");
+  chevron.className = "category-chevron";
+  chevron.textContent = "›";
+  chevron.setAttribute("aria-hidden", "true");
+
+  const label = document.createElement("span");
+  label.className = "category-label";
+  label.textContent = category.name || "Untitled";
+
+  const countNode = document.createElement("span");
+  countNode.className = "category-count";
+  countNode.textContent = String(count);
+
+  header.append(chevron, label, countNode);
+  return header;
 }
 
 function createFilterMenuItem(
@@ -644,6 +741,21 @@ function getActiveFilterId(filters: SavedFilter[], renderState: PopupRenderState
   );
 
   return legacyExpandedId || filters[0]?.id || "";
+}
+
+async function toggleCategoryCollapse(categoryId: string, root: HTMLElement): Promise<void> {
+  const current = new Set(state.appSettings.collapsedCategoryIds);
+  if (current.has(categoryId)) {
+    current.delete(categoryId);
+  } else {
+    current.add(categoryId);
+  }
+  state.appSettings = {
+    ...state.appSettings,
+    collapsedCategoryIds: Array.from(current)
+  };
+  await saveAppSettings(state.appSettings);
+  render(root);
 }
 
 function selectFilter(filterId: string, root: HTMLElement): void {
