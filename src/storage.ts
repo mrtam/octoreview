@@ -1,6 +1,7 @@
 import type {
   AppSettings,
   CacheByFilterId,
+  Category,
   FilterCacheEntry,
   NotificationStateByFilterId,
   PollingIntervalMinutes,
@@ -9,13 +10,15 @@ import type {
 
 const TOKEN_KEY = "githubToken";
 const FILTERS_KEY = "filters";
+const CATEGORIES_KEY = "categories";
 const CACHE_KEY = "cacheByFilterId";
 const SETTINGS_KEY = "appSettings";
 const NOTIFICATION_STATE_KEY = "notificationStateByFilterId";
 
 export const POLLING_INTERVAL_OPTIONS: PollingIntervalMinutes[] = [1, 5, 15, 30, 60];
 export const DEFAULT_APP_SETTINGS: AppSettings = {
-  pollingIntervalMinutes: 15
+  pollingIntervalMinutes: 15,
+  collapsedCategoryIds: []
 };
 
 export async function getGitHubToken(): Promise<string> {
@@ -37,6 +40,33 @@ export async function getFilters(): Promise<SavedFilter[]> {
 
 export async function saveFilters(filters: SavedFilter[]): Promise<void> {
   await chrome.storage.local.set({ [FILTERS_KEY]: filters.map(normalizeStoredFilter) });
+}
+
+export async function getCategories(): Promise<Category[]> {
+  const categories = await getStorageValue<Category[]>(CATEGORIES_KEY, []);
+  return categories.map(normalizeStoredCategory);
+}
+
+export async function saveCategories(categories: Category[]): Promise<void> {
+  await chrome.storage.local.set({ [CATEGORIES_KEY]: categories.map(normalizeStoredCategory) });
+}
+
+export async function deleteCategory(
+  categoryId: string
+): Promise<{ categories: Category[]; filters: SavedFilter[] }> {
+  const [categories, filters] = await Promise.all([getCategories(), getFilters()]);
+  const nextCategories = categories.filter((category) => category.id !== categoryId);
+  const nextFilters = filters.map((filter) => {
+    if (filter.categoryId !== categoryId) {
+      return filter;
+    }
+    const next = { ...filter };
+    delete next.categoryId;
+    return next;
+  });
+
+  await Promise.all([saveCategories(nextCategories), saveFilters(nextFilters)]);
+  return { categories: nextCategories, filters: nextFilters };
 }
 
 export async function getCacheByFilterId(): Promise<CacheByFilterId> {
@@ -76,7 +106,7 @@ export async function clearNotificationStateByFilterId(): Promise<void> {
 }
 
 export function normalizeStoredFilter(filter: SavedFilter): SavedFilter {
-  return {
+  const normalized: SavedFilter = {
     id: filter.id,
     name: filter.name.trim(),
     repoOwner: filter.repoOwner.trim(),
@@ -88,13 +118,31 @@ export function normalizeStoredFilter(filter: SavedFilter): SavedFilter {
     sort: filter.sort || "updated-desc",
     includeDrafts: filter.includeDrafts !== false
   };
+
+  const categoryId = filter.categoryId?.trim();
+  if (categoryId) {
+    normalized.categoryId = categoryId;
+  }
+
+  return normalized;
+}
+
+export function normalizeStoredCategory(category: Category): Category {
+  return {
+    id: category.id,
+    name: category.name.trim()
+  };
 }
 
 export function normalizeAppSettings(settings: Partial<AppSettings> | undefined): AppSettings {
   const interval = settings?.pollingIntervalMinutes;
+  const collapsed = Array.isArray(settings?.collapsedCategoryIds)
+    ? settings!.collapsedCategoryIds.filter((id): id is string => typeof id === "string")
+    : [];
 
   return {
-    pollingIntervalMinutes: isPollingIntervalMinutes(interval) ? interval : DEFAULT_APP_SETTINGS.pollingIntervalMinutes
+    pollingIntervalMinutes: isPollingIntervalMinutes(interval) ? interval : DEFAULT_APP_SETTINGS.pollingIntervalMinutes,
+    collapsedCategoryIds: collapsed
   };
 }
 

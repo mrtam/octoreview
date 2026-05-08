@@ -42,6 +42,17 @@
         </form>
       </section>
 
+      <section class="settings-section" aria-labelledby="category-heading">
+        <div class="section-header">
+          <h2 id="category-heading">Categories</h2>
+          <button id="new-category-button" type="button" class="primary-with-icon">
+            <span class="button-icon" aria-hidden="true" data-icon="add"></span>
+            <span>New category</span>
+          </button>
+        </div>
+        <div id="category-list" class="category-list"></div>
+      </section>
+
       <section class="settings-section" aria-labelledby="filter-heading">
         <div class="section-header">
           <h2 id="filter-heading">Filters</h2>
@@ -101,6 +112,12 @@
             </select>
           </label>
         </div>
+        <label class="field">
+          <span>Category</span>
+          <select id="filter-category">
+            <option value="">(None)</option>
+          </select>
+        </label>
         <label class="field">
           <span>Search syntax</span>
           <input id="filter-query" type="text" spellcheck="false" placeholder="review-requested:@me -draft:true">

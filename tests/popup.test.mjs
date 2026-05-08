@@ -423,6 +423,87 @@ test("renderPopup omits the Load more button when hasMore is false", () => {
   assert.equal(root.querySelector("button[data-action='load-more']"), null);
 });
 
+test("renderPopup groups filters by category with uncategorized first", () => {
+  const dom = new JSDOM("<main id=\"root\"></main>");
+  globalThis.document = dom.window.document;
+  const root = dom.window.document.getElementById("root");
+
+  const loose = { ...filter, id: "f1", name: "Loose" };
+  const monoA = { ...filter, id: "f2", name: "Mono A", categoryId: "cat-mono" };
+  const monoB = { ...filter, id: "f3", name: "Mono B", categoryId: "cat-mono" };
+  const cliA = { ...filter, id: "f4", name: "CLI A", categoryId: "cat-cli" };
+
+  renderPopup(root, [loose, monoA, monoB, cliA], {}, {
+    tokenConfigured: true,
+    loadingFilterIds: new Set(),
+    activeFilterId: loose.id,
+    categories: [{ id: "cat-mono", name: "Monolith" }, { id: "cat-cli", name: "CLI" }],
+    collapsedCategoryIds: new Set()
+  });
+
+  const menu = root.querySelector(".filter-menu");
+  const sequence = Array.from(menu.children).map((node) => {
+    if (node.classList.contains("filter-category-header")) {
+      return `H:${node.querySelector(".category-label").textContent}`;
+    }
+    return `F:${node.querySelector(".filter-title").textContent}`;
+  });
+
+  assert.deepEqual(sequence, [
+    "F:Loose",
+    "H:Monolith",
+    "F:Mono A",
+    "F:Mono B",
+    "H:CLI",
+    "F:CLI A"
+  ]);
+});
+
+test("renderPopup hides filters in collapsed categories but keeps active detail visible", () => {
+  const dom = new JSDOM("<main id=\"root\"></main>");
+  globalThis.document = dom.window.document;
+  const root = dom.window.document.getElementById("root");
+
+  const monoA = { ...filter, id: "f2", name: "Mono A", categoryId: "cat-mono" };
+
+  renderPopup(
+    root,
+    [monoA],
+    {
+      [monoA.id]: {
+        fetchedAt: "2026-05-05T12:00:00Z",
+        results: [
+          {
+            id: 1,
+            number: 42,
+            title: "Detail still rendered",
+            url: "https://github.com/octo-org/octo-repo/pull/42",
+            author: "octocat",
+            labels: [],
+            state: "open",
+            draft: false,
+            createdAt: "2026-05-01T12:00:00Z",
+            updatedAt: "2026-05-05T11:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      tokenConfigured: true,
+      loadingFilterIds: new Set(),
+      activeFilterId: monoA.id,
+      categories: [{ id: "cat-mono", name: "Monolith" }],
+      collapsedCategoryIds: new Set(["cat-mono"])
+    }
+  );
+
+  assert.equal(root.querySelector(".filter-menu-item"), null);
+  const header = root.querySelector(".filter-category-header");
+  assert.equal(header.dataset.collapsed, "true");
+  assert.equal(header.getAttribute("aria-expanded"), "false");
+  assert.match(root.querySelector(".menu-panel").textContent, /Detail still rendered/);
+});
+
 test("renderPopup preserves cached results while showing filter errors", () => {
   const dom = new JSDOM("<main id=\"root\"></main>");
   globalThis.document = dom.window.document;
