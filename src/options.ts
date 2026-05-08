@@ -2,12 +2,17 @@ import { buildFilterWebUrl, validateGitHubToken } from "./github.js";
 import { FILTER_ICONS, FILTER_ICON_CATEGORIES } from "./icons.js";
 import {
   clearGitHubToken,
+  DEFAULT_APP_SETTINGS,
+  getAppSettings,
   getFilters,
   getGitHubToken,
+  isPollingIntervalMinutes,
+  POLLING_INTERVAL_OPTIONS,
+  saveAppSettings,
   saveFilters,
   saveGitHubToken
 } from "./storage.js";
-import type { FilterSort, SavedFilter } from "./types.js";
+import type { AppSettings, FilterSort, PollingIntervalMinutes, SavedFilter } from "./types.js";
 import { UI_ICONS, type UiIconName } from "./ui-icons.js";
 
 type ListAction = "open" | "edit" | "delete";
@@ -27,16 +32,19 @@ interface FilterDraft {
   icon: string;
   useDefaultOpen: boolean;
   enabled: boolean;
+  pollingEnabled: boolean;
   includeDrafts: boolean;
   sort: FilterSort;
 }
 
 interface OptionsState {
   filters: SavedFilter[];
+  appSettings: AppSettings;
 }
 
 const state: OptionsState = {
-  filters: []
+  filters: [],
+  appSettings: DEFAULT_APP_SETTINGS
 };
 
 export function validateFilterDraft(draft: FilterDraft): string[] {
@@ -70,9 +78,19 @@ export function draftToFilter(draft: FilterDraft): SavedFilter {
     query: draft.useDefaultOpen ? "" : draft.query.trim(),
     icon: normalizeIcon(draft.icon),
     enabled: draft.enabled,
+    pollingEnabled: draft.pollingEnabled,
     includeDrafts: draft.includeDrafts,
     sort: draft.sort
   };
+}
+
+export function setPollingIntervalSelectValue(select: HTMLSelectElement, settings: AppSettings): void {
+  select.value = String(settings.pollingIntervalMinutes);
+}
+
+export function readPollingIntervalSelectValue(select: HTMLSelectElement): PollingIntervalMinutes {
+  const value = Number(select.value);
+  return isPollingIntervalMinutes(value) ? value : DEFAULT_APP_SETTINGS.pollingIntervalMinutes;
 }
 
 export function updateSearchSyntaxState(
@@ -106,6 +124,7 @@ export function renderFilterList(root: HTMLElement, filters: SavedFilter[]): voi
     item.className = "filter-item";
     item.dataset.filterId = filter.id;
     item.dataset.disabled = String(!filter.enabled);
+    item.dataset.polling = String(filter.pollingEnabled);
 
     const handle = document.createElement("button");
     handle.type = "button";
@@ -134,7 +153,7 @@ export function renderFilterList(root: HTMLElement, filters: SavedFilter[]): voi
     nameRow.append(name);
     const meta = document.createElement("div");
     meta.className = "filter-details";
-    meta.textContent = `${filter.repoOwner}/${filter.repoName} · ${filter.query || "is:open"} · ${filter.sort}`;
+    meta.textContent = `${filter.repoOwner}/${filter.repoName} · ${filter.query || "is:open"} · ${filter.sort}${filter.pollingEnabled ? " · polling" : ""}`;
     details.append(nameRow, meta);
 
     const actions = document.createElement("div");
@@ -149,9 +168,10 @@ export function renderFilterList(root: HTMLElement, filters: SavedFilter[]): voi
 }
 
 async function bootstrapOptions(): Promise<void> {
-  state.filters = await getFilters();
+  [state.filters, state.appSettings] = await Promise.all([getFilters(), getAppSettings()]);
 
   inflateInlineIcons(document);
+  populatePollingSettingsForm();
 
   const tokenInput = getInput("token-input");
   const token = await getGitHubToken();
@@ -178,6 +198,15 @@ async function bootstrapOptions(): Promise<void> {
   getElement("filter-form").addEventListener("submit", (event) => {
     event.preventDefault();
     void saveFilterFromForm();
+  });
+
+  getElement("polling-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    void savePollingSettingsFromForm();
+  });
+
+  getInput("polling-interval").addEventListener("change", () => {
+    void savePollingSettingsFromForm();
   });
 
   setupIconPickerDialog();
@@ -247,6 +276,15 @@ async function clearTokenFromForm(): Promise<void> {
   await clearGitHubToken();
   getInput("token-input").value = "";
   setStatus("Token cleared.");
+}
+
+async function savePollingSettingsFromForm(): Promise<void> {
+  state.appSettings = {
+    pollingIntervalMinutes: readPollingIntervalSelectValue(getInput("polling-interval"))
+  };
+  await saveAppSettings(state.appSettings);
+  populatePollingSettingsForm();
+  setStatus("Polling interval saved.");
 }
 
 async function saveFilterFromForm(): Promise<void> {
@@ -320,6 +358,7 @@ function readFilterDraft(): FilterDraft {
     icon: getInput("filter-icon").value,
     useDefaultOpen: getInput("filter-default-open").checked,
     enabled: getInput("filter-enabled").checked,
+    pollingEnabled: getInput("filter-polling-enabled").checked,
     includeDrafts: getInput("filter-include-drafts").checked,
     sort: getInput("filter-sort").value as FilterSort
   };
@@ -334,6 +373,7 @@ function populateFilterForm(filter: SavedFilter): void {
   setIconValue(filter.icon || "");
   getInput("filter-default-open").checked = filter.query.length === 0;
   getInput("filter-enabled").checked = filter.enabled;
+  getInput("filter-polling-enabled").checked = filter.pollingEnabled;
   getInput("filter-include-drafts").checked = filter.includeDrafts !== false;
   getInput("filter-sort").value = filter.sort;
   getElement("filter-errors").textContent = "";
@@ -349,6 +389,7 @@ function resetFilterForm(): void {
   setIconValue("");
   getInput("filter-default-open").checked = true;
   getInput("filter-enabled").checked = true;
+  getInput("filter-polling-enabled").checked = false;
   getInput("filter-include-drafts").checked = true;
   getInput("filter-sort").value = "updated-desc";
   getElement("filter-errors").textContent = "";
@@ -493,6 +534,21 @@ function renderIconTrigger(value: string): void {
 
 function renderAll(): void {
   renderFilterList(getElement("filter-list"), state.filters);
+}
+
+function populatePollingSettingsForm(): void {
+  const select = getInput("polling-interval");
+
+  if (select.options.length === 0) {
+    for (const interval of POLLING_INTERVAL_OPTIONS) {
+      const option = document.createElement("option");
+      option.value = String(interval);
+      option.textContent = interval === 1 ? "Every minute" : `Every ${interval} minutes`;
+      select.append(option);
+    }
+  }
+
+  setPollingIntervalSelectValue(select, state.appSettings);
 }
 
 function createListButton(

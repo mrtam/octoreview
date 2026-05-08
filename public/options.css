@@ -170,9 +170,14 @@ h2 {
 }
 
 .token-form,
+.polling-form,
 .filter-form {
   display: grid;
   gap: 16px;
+}
+
+.polling-interval-field {
+  max-width: 220px;
 }
 
 .field-grid {

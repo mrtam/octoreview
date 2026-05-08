@@ -16,6 +16,10 @@ Load `dist/` as an unpacked extension from `chrome://extensions`.
 
 OctoReview is read-only. Use a GitHub personal access token with read access to the repositories you want to query. The token is stored in `chrome.storage.local`; saved filters and cached result metadata are stored separately.
 
+## Polling
+
+Filters can opt into background polling from the options page. OctoReview uses one app-wide polling interval and shows a purple toolbar badge when a polled filter finds a PR that was not present in that filter's previous cached result set. Opening the toolbar popup clears the unread badge, and each filter-level dot clears when that filter is hovered or focused.
+
 ## Filter Syntax
 
 Each filter combines:

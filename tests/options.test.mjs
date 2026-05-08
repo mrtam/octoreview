@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
-import { draftToFilter, renderFilterList, updateSearchSyntaxState, validateFilterDraft } from "../dist/options.js";
+import {
+  draftToFilter,
+  readPollingIntervalSelectValue,
+  renderFilterList,
+  setPollingIntervalSelectValue,
+  updateSearchSyntaxState,
+  validateFilterDraft
+} from "../dist/options.js";
 
 test("validateFilterDraft requires query unless default open PRs is selected", () => {
   const baseDraft = {
@@ -13,6 +20,7 @@ test("validateFilterDraft requires query unless default open PRs is selected", (
     icon: "",
     useDefaultOpen: false,
     enabled: true,
+    pollingEnabled: false,
     includeDrafts: true,
     sort: "updated-desc"
   };
@@ -33,6 +41,7 @@ test("draftToFilter stores blank query for explicit default-open filters", () =>
     icon: " API ",
     useDefaultOpen: true,
     enabled: true,
+    pollingEnabled: false,
     includeDrafts: true,
     sort: "updated-desc"
   });
@@ -54,6 +63,7 @@ test("draftToFilter limits custom filter icons", () => {
     icon: "ABCDE",
     useDefaultOpen: false,
     enabled: true,
+    pollingEnabled: false,
     includeDrafts: true,
     sort: "updated-desc"
   });
@@ -71,11 +81,50 @@ test("draftToFilter preserves the includeDrafts toggle", () => {
     icon: "",
     useDefaultOpen: false,
     enabled: true,
+    pollingEnabled: false,
     includeDrafts: false,
     sort: "updated-desc"
   });
 
   assert.equal(filter.includeDrafts, false);
+});
+
+test("draftToFilter preserves the polling toggle", () => {
+  const filter = draftToFilter({
+    id: "f1",
+    name: "Team",
+    repoOwner: "octo-org",
+    repoName: "octo-repo",
+    query: "team:octo/reviewers",
+    icon: "",
+    useDefaultOpen: false,
+    enabled: true,
+    pollingEnabled: true,
+    includeDrafts: true,
+    sort: "updated-desc"
+  });
+
+  assert.equal(filter.pollingEnabled, true);
+});
+
+test("polling interval select reads valid values and defaults invalid values", () => {
+  const dom = new JSDOM("<select></select>");
+  globalThis.document = dom.window.document;
+  const select = dom.window.document.querySelector("select");
+
+  for (const value of ["1", "5", "15", "30", "60", "2"]) {
+    const option = dom.window.document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.append(option);
+  }
+
+  setPollingIntervalSelectValue(select, { pollingIntervalMinutes: 1 });
+  assert.equal(select.value, "1");
+  assert.equal(readPollingIntervalSelectValue(select), 1);
+
+  select.value = "2";
+  assert.equal(readPollingIntervalSelectValue(select), 15);
 });
 
 test("updateSearchSyntaxState disables query input while default open PRs is selected", () => {
@@ -122,12 +171,15 @@ test("renderFilterList renders actions for saved filters", () => {
       query: "review-requested:@me",
       icon: "ME",
       enabled: true,
+      pollingEnabled: true,
       sort: "updated-desc"
     }
   ]);
 
   assert.match(root.textContent, /Needs review/);
+  assert.match(root.textContent, /polling/);
   assert.equal(root.querySelector(".filter-list-icon").textContent, "ME");
+  assert.equal(root.querySelector(".filter-item").dataset.polling, "true");
   assert.equal(root.querySelectorAll("button[data-action]").length, 3);
   assert.ok(root.querySelector(".drag-handle"), "expected a drag handle");
   assert.match(

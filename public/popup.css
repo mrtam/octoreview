@@ -318,6 +318,24 @@ h1 {
   text-align: center;
 }
 
+.filter-badges {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.filter-unread-dot {
+  background: #8b5cf6;
+  border: 2px solid var(--bg-surface);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.2);
+  display: inline-block;
+  flex: 0 0 auto;
+  height: 10px;
+  width: 10px;
+}
+
 .count[data-state="has"] {
   background: var(--accent-soft);
   color: var(--accent-strong);
@@ -567,6 +585,10 @@ h1 {
 
   .filter-menu-item[aria-selected="true"] .count {
     color: #0f1115;
+  }
+
+  .filter-unread-dot {
+    border-color: var(--bg-surface);
   }
 
   .label {
